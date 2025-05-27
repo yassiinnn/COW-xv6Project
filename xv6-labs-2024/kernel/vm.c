@@ -1,4 +1,4 @@
-Sure! Below is the complete code with all the necessary updates. I've added the missing parts, ensured proper declaration of `incref()`, and updated the necessary headers. You should be able to copy and paste the entire code into your files.
+
 
 ### `kernel/vm.c`
 
