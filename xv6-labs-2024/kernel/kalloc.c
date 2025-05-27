@@ -20,6 +20,8 @@ struct run {
 
 struct {
   struct spinlock lock;
+  #define PHYPAGES (PHYSTOP / PGSIZE)
+  int refcnt[PHYPAGES];
   struct run *freelist;
 } kmem;
 
