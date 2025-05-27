@@ -98,6 +98,8 @@ vprintf(int fd, const char *fmt, va_list ap)
           s = "(null)";
         for(; *s; s++)
           putc(fd, *s);
+      } else if(c0 == 'c'){
+        putc(fd, va_arg(ap, int));
       } else if(c0 == '%'){
         putc(fd, '%');
       } else {
@@ -145,6 +147,7 @@ fprintf(int fd, const char *fmt, ...)
 
   va_start(ap, fmt);
   vprintf(fd, fmt, ap);
+  va_end(ap);
 }
 
 void
@@ -154,4 +157,5 @@ printf(const char *fmt, ...)
 
   va_start(ap, fmt);
   vprintf(1, fmt, ap);
+  va_end(ap);
 }
