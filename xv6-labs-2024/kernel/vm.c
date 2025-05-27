@@ -374,19 +374,24 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    if (va0 >= MAXVA)
+    if(va0 >= MAXVA)
       return -1;
-    if((pte = walk(pagetable, va0, 0)) == 0) {
-      // printf("copyout: pte should exist 0x%x %d\n", dstva, len);
+
+    pte = walk(pagetable, va0, 0);
+    if(pte == 0)
       return -1;
+
+    // Handle COW pages
+    if((*pte & PTE_V) && (*pte & PTE_COW)) {
+      if(handle_cow_fault(va0) < 0)
+        return -1;
+      pte = walk(pagetable, va0, 0);  // Re-walk since PTE might have changed
     }
 
-
-    // forbid copyout over read-only user text pages.
-    if((*pte & PTE_W) == 0)
+    if((*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_W) == 0)
       return -1;
     
-    pa0 = walkaddr(pagetable, va0);
+    pa0 = PTE2PA(*pte);
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
@@ -485,3 +490,65 @@ pgpte(pagetable_t pagetable, uint64 va) {
   return walk(pagetable, va, 0);
 }
 #endif
+
+// Handle a page fault caused by a write to a COW page
+int handle_cow_fault(uint64 va) {
+  struct proc *p = myproc();
+  if(p == 0)
+    return -1;
+
+  // Check if address is valid
+  if(va >= MAXVA)
+    return -1;
+
+  // Round down to page boundary
+  va = PGROUNDDOWN(va);
+
+  // Walk the page table to get PTE
+  pte_t *pte = walk(p->pagetable, va, 0);
+  if(pte == 0)
+    return -1;
+
+  // Check if this is actually a COW page
+  if((*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_COW) == 0)
+    return -1;
+
+  // Get the physical address
+  uint64 pa = PTE2PA(*pte);
+  
+  // If reference count is 1, just make the page writable
+  if(refcount(pa) == 1) {
+    *pte |= PTE_W;
+    *pte &= ~PTE_COW;
+    return 0;
+  }
+
+  // Allocate new page
+  char *mem = kalloc();
+  if(mem == 0)
+    return -1;
+
+  // Copy the old page contents
+  memmove(mem, (char*)pa, PGSIZE);
+
+  // Map the new page with write permissions
+  uint64 flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+  *pte = PA2PTE((uint64)mem) | flags;
+
+  // Decrease reference count of old page
+  decref(pa);
+
+  return 0;
+}
+
+// Clear PTE_U bit in a PTE, used to make a page inaccessible to user code.
+void
+uvmclear(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    panic("uvmclear");
+  *pte &= ~PTE_U;
+}

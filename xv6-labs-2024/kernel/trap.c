@@ -34,7 +34,7 @@ trapinithart(void)
 // called from trampoline.S
 //
 void
-void usertrap(void)
+usertrap(void)
 {
   int which_dev = 0;
 
@@ -46,15 +46,49 @@ void usertrap(void)
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
-
+  
+  // save user program counter.
+  p->trapframe->epc = r_sepc();
+  
   uint64 scause = r_scause();
-  uint64 sepc = r_sepc();
 
-  if(scause == 15){ // store page fault
+  if(scause == 8){
+    // system call
+    if(killed(p))
+      exit(-1);
+
+    // sepc points to the ecall instruction,
+    // but we want to return to the next instruction.
+    p->trapframe->epc += 4;
+
+    // an interrupt will change sepc, scause, and sstatus,
+    // so enable only now that we're done with those registers.
+    intr_off();
+
+    syscall();
+  } else if((which_dev = devintr()) != 0){
+    // ok
+  } else if(scause == 15) { // store/AMO page fault
     uint64 va = r_stval();
-    handle_cow_fault(va);
-    return;
+    if(handle_cow_fault(va) != 0) {
+      printf("usertrap(): cow page fault failed\n");
+      p->killed = 1;
+    }
+  } else {
+    printf("usertrap(): unexpected scause 0x%lx pid=%d\n", scause, p->pid);
+    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    p->killed = 1;
   }
+
+  if(killed(p))
+    exit(-1);
+
+  // give up the CPU if this is a timer interrupt.
+  if(which_dev == 2)
+    yield();
+
+  usertrapret();
+}
 
 //
 // return to user space
