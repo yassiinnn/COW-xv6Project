@@ -8,9 +8,7 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
-// Reference count array: one count per physical page
-int refcnt[PHYSTOP / PGSIZE];
-
+z
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -68,14 +66,6 @@ void kfree(void *pa)
     release(&kmem.lock);
     return;
   }
-  void incref(uint64 pa) {
-  refcnt[pa / PGSIZE]++;
-}
-
-void decref(uint64 pa) {
-  refcnt[pa / PGSIZE]--;
-}
-
   release(&kmem.lock);
 
 #ifndef LAB_SYSCALL
